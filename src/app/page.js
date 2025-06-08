@@ -23,8 +23,14 @@ const Home = () => {
     setLastUpdated(new Date().toLocaleString());
   };
 
+  const formatDate = (dateString) => {
+    if (!dateString) return "";
+    const date = new Date(dateString);
+    if (isNaN(date)) return "";
+    return date.toISOString().replace("T", " ").substring(0, 16);
+  };
+
   useEffect(() => {
-    // Fetch reports from Supabase
     const fetchReports = async () => {
       try {
         const { data, error } = await supabase
@@ -45,8 +51,6 @@ const Home = () => {
 
     fetchReports();
 
-    // Subscribe to changes in the reports table to get updates in real-time
-    //allows response to get changes immediately
     const subscription = supabase
       .channel("reports-changes")
       .on(
@@ -82,6 +86,7 @@ const Home = () => {
     resolvedToday: reports.filter(
       (report) =>
         report.resolved &&
+        report.created_at &&
         formatDate(report.created_at).startsWith("2025-06-07")
     ).length,
     criticalCases: reports.filter(
@@ -90,18 +95,28 @@ const Home = () => {
     avgResponseTime: "3.2 hours",
   };
 
-  const handleResolve = (id) => {
-    setReports(
-      reports.map((report) =>
-        report.id === id ? { ...report, resolved: true } : report
-      )
-    );
-    updateLastUpdated();
-  };
+  const handleResolve = async (id) => {
+    try {
+      // Update resolved = true in Supabase
+      const { error } = await supabase
+        .from("reports")
+        .update({ resolved: true })
+        .eq("id", id);
 
-  const formatDate = (dateString) => {
-    const date = new Date(dateString);
-    return date.toISOString().replace("T", " ").substring(0, 16);
+      if (error) throw error;
+
+      // Optional local state update (Supabase subscription also handles this)
+      setReports(
+        reports.map((report) =>
+          report.id === id ? { ...report, resolved: true } : report
+        )
+      );
+
+      updateLastUpdated();
+    } catch (err) {
+      console.error("Error updating report:", err);
+      setError(err.message);
+    }
   };
 
   const filteredReports = reports.filter((report) => {
