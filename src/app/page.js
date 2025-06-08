@@ -13,8 +13,8 @@ const Home = () => {
   ]);
   const [districtFilter, setDistrictFilter] = useState("All");
   const [dateRange, setDateRange] = useState({
-    start: "2025-06-01",
-    end: "2025-06-07",
+    start: "2024-01-01", // Wide range for testing
+    end: "2025-12-31",
   });
   const [reports, setReports] = useState([]);
   const [error, setError] = useState(null);
@@ -30,6 +30,23 @@ const Home = () => {
     return date.toISOString().replace("T", " ").substring(0, 16);
   };
 
+  const getSeverity = (leakType) => {
+    switch (leakType) {
+      case "Burst Pipe":
+        return "Critical";
+      case "Moderate Leak":
+        return "Moderate";
+      case "Minor Leak":
+        return "Minor";
+      case "Broken Valve":
+        return "Moderate";
+      case "Small Leak":
+        return "Minor";
+      default:
+        return "Minor"; // Treat unknown as Minor to avoid filtering everything out
+    }
+  };
+
   useEffect(() => {
     const fetchReports = async () => {
       try {
@@ -42,7 +59,7 @@ const Home = () => {
 
         setReports(data);
         updateLastUpdated();
-        console.log("Fetched reports:", data);
+        // console.log("Fetched reports:", data);
       } catch (err) {
         setError(err.message);
         console.error("Error fetching reports:", err);
@@ -60,7 +77,8 @@ const Home = () => {
           schema: "public",
           table: "reports",
         },
-        () => {
+        (payload) => {
+          console.log("Realtime payload:", payload);
           fetchReports();
         }
       )
@@ -90,14 +108,14 @@ const Home = () => {
         formatDate(report.created_at).startsWith("2025-06-07")
     ).length,
     criticalCases: reports.filter(
-      (report) => report.leak_type === "Burst Pipe" && !report.resolved
+      (report) =>
+        getSeverity(report.leak_type) === "Critical" && !report.resolved
     ).length,
     avgResponseTime: "3.2 hours",
   };
 
   const handleResolve = async (id) => {
     try {
-      // Update resolved = true in Supabase
       const { error } = await supabase
         .from("reports")
         .update({ resolved: true })
@@ -105,7 +123,6 @@ const Home = () => {
 
       if (error) throw error;
 
-      // Optional local state update (Supabase subscription also handles this)
       setReports(
         reports.map((report) =>
           report.id === id ? { ...report, resolved: true } : report
@@ -125,13 +142,9 @@ const Home = () => {
       (activeFilter === "Active" && !report.resolved) ||
       (activeFilter === "Resolved" && report.resolved);
 
-    const matchesSeverity = severityFilter.includes(
-      report.leak_type === "Burst Pipe"
-        ? "Critical"
-        : report.leak_type === "Moderate Leak"
-        ? "Moderate"
-        : "Minor"
-    );
+    const reportSeverity = getSeverity(report.leak_type);
+
+    const matchesSeverity = severityFilter.includes(reportSeverity);
 
     const matchesDistrict =
       districtFilter === "All" || report.district === districtFilter;
@@ -139,6 +152,19 @@ const Home = () => {
     const reportDate = formatDate(report.created_at).split(" ")[0];
     const isInDateRange =
       reportDate >= dateRange.start && reportDate <= dateRange.end;
+
+    console.log("Checking report:", {
+      id: report.id,
+      resolved: report.resolved,
+      leak_type: report.leak_type,
+      severityMapped: reportSeverity,
+      district: report.district,
+      created_at: report.created_at,
+      matchesStatus,
+      matchesSeverity,
+      matchesDistrict,
+      isInDateRange,
+    });
 
     return matchesStatus && matchesSeverity && matchesDistrict && isInDateRange;
   });
@@ -235,9 +261,11 @@ const Home = () => {
                   </th>
                 </tr>
               </thead>
+
               <tbody className="bg-white divide-y divide-gray-200">
                 {filteredReports.map((report) => (
                   <tr key={report.id}>
+                    {/* Location */}
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                       {report.address}
                       {report.Description && (
@@ -246,12 +274,14 @@ const Home = () => {
                         </p>
                       )}
                     </td>
+
+                    {/* Severity */}
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span
                         className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                          report.leak_type === "Burst Pipe"
+                          getSeverity(report.leak_type) === "Critical"
                             ? "bg-red-500"
-                            : report.leak_type === "Moderate Leak"
+                            : getSeverity(report.leak_type) === "Moderate"
                             ? "bg-orange-400"
                             : "bg-sky-500"
                         } text-white`}
@@ -259,9 +289,13 @@ const Home = () => {
                         {report.leak_type}
                       </span>
                     </td>
+
+                    {/* Reported */}
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {formatDate(report.created_at)}
                     </td>
+
+                    {/* Status */}
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span
                         className={`text-sm font-medium ${
@@ -271,6 +305,8 @@ const Home = () => {
                         {report.resolved ? "Resolved" : "Active"}
                       </span>
                     </td>
+
+                    {/* Action */}
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                       {!report.resolved ? (
                         <button
